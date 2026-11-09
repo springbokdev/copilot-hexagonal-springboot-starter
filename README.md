@@ -1,87 +1,63 @@
-# Spring Boot SDD Starter
+# Spring Boot Hexagonal Starter for GitHub Copilot
 
-A starter for building Spring Boot services using a **Spec-Driven Development (SDD)** workflow with Claude Code. It 
-bundles a working Spring Boot 4 / Gradle project together with a `.claude/` toolchain — skills, agents, and 
-hooks — that turns business rules into specs, specs into acceptance tests, and tests into code, with the test suite enforced automatically on every change.
+A Spring Boot microservice starter for building hexagonal applications with a spec-driven development workflow. The repository includes GitHub Copilot instructions, reusable agent skills, custom review agents, and optional Copilot hooks under `.github/`.
 
 ## Prerequisites
 
-- **Java 25** — download from [Adoptium](https://adoptium.net/) or [SDKMAN](https://sdkman.io/)
-- **Maven** — included via Maven Wrapper (`./mvnw`), no separate install needed
-- **Docker** (optional) — only needed for PostgreSQL in later sections
-- **Claude Code** — install from [claude.ai/claude-code](https://claude.ai/claude-code)
+- **Java 21** — available from [Adoptium](https://adoptium.net/) or [SDKMAN](https://sdkman.io/).
+- **GitHub Copilot** — use a supported Copilot client with agent skills enabled, such as agent mode in VS Code or GitHub Copilot CLI. See [Copilot agent skills](https://docs.github.com/copilot/concepts/agents/about-agent-skills).
+- **PowerShell 7+ on Windows** — needed by the Windows Copilot hook commands.
+- **jq on macOS/Linux** — needed by the Bash Copilot hook scripts.
+- **Docker (optional)** — only needed if you want to run PostgreSQL locally using Docker.
 
-### CLAUDE.md
+Maven is provided by the wrapper; no separate Maven installation is needed.
 
-The main instruction file at the project root. Contains build commands, coding conventions (BigDecimal for money, Java 25 features, constructor injection), the four-step development process (Discover → Accept → TDD → Review), testing standards, and architecture rules.
+## Copilot customizations
 
-### Rules (`.claude/rules/`)
+- `.github/copilot-instructions.md` contains repository-wide conventions, architecture guidance, build commands, and the feature workflow.
+- `.github/instructions/*.instructions.md` contains path-scoped rules for domain, money, persistence, web, and test code.
+- `.github/skills/` contains the `discover`, `accept`, `tdd`, `review`, `commit-summary`, and `quality-check` workflows. Skills include their supporting references and templates.
+- `.github/agents/*.agent.md` contains focused architecture, spec-compliance, and mutation-report reviewers.
+- `.github/hooks/` contains optional session context and protected-file guard hooks. These are supported in Copilot CLI and Copilot cloud-agent environments; IDE support depends on the client and version. The shell-command scan is best-effort, not a security sandbox.
 
-Path-scoped rules that activate automatically when Claude edits files in specific directories:
+Use the skills by asking Copilot to run the named workflow, for example: “Use the discover skill for this user story…”. For feature development, follow **Discover → Accept → TDD → Review**. The first three skills stop at their review gates and wait for your direction before proceeding.
 
-| Rule File | Scope | Key Constraints |
-|---|---|---|
-| `domain-rules.md` | `src/**/domain/**` | No Spring imports, no JPA, pure Java only |
-| `persistence-rules.md` | `src/**/adapter/out/persistence/**` | JPA entities here only, implement outbound ports |
-| `test-rules.md` | `src/test/**` | Naming conventions (*Test vs *IT), never recalculate expected values |
-| `web-rules.md` | `src/**/adapter/in/web/**` | Thin controllers, DTOs only, @Valid on request bodies |
+## Architecture and development conventions
 
-### Skills (`.claude/skills/`)
+- **Hexagonal architecture** — domain code stays framework-free; adapters depend on application ports, which depend on the domain.
+- **Money handling** — use `BigDecimal`, scale 2, and explicit `RoundingMode.HALF_EVEN`; never use `float`, `double`, or `int` for money.
+- **Persistence** — PostgreSQL is the production database. Flyway migrations own the schema; Hibernate validates it and does not create it.
+- **Specs as the source of truth** — when a feature spec exists under `doc/specs/`, tests verify its rules and examples before production code is written.
+- **Tests** — plain JUnit + AssertJ for domain logic, `@DataJpaTest` for repositories, `@WebMvcTest` for controllers, and `@SpringBootTest` for acceptance tests.
 
-Reusable, model-invocable skills for the spec-driven development workflow. Each
-lives in its own directory as a `SKILL.md` (with supporting `references/` and
-`templates/`) and can be invoked explicitly with `/<name>`:
+## Useful commands
 
-| Skill | Model | Purpose |
-|---|---|---|
-| `/discover` | opus | Run Example Mapping to discover rules, examples, and questions from a user story |
-| `/accept` | sonnet | Write a failing acceptance test for the next spec rule |
-| `/tdd` | sonnet | Run one RED → GREEN → REFACTOR TDD cycle |
-| `/review` | opus | Architecture and code quality review of uncommitted changes |
-
-### Hooks (`.claude/settings.json`)
-
-The project includes a PostToolUse hook that automatically runs `mvn test` after every file edit, ensuring Claude never moves forward with broken code.
-
-## Architecture Decisions
-
-**Money handling** — All monetary values use `BigDecimal` with explicit `RoundingMode.DOWN` and scale 2. Never `float`, `double`, or `int` for money.
-
-**Hexagonal architecture** — Domain code is framework-free. Spring and JPA live only in adapters. This makes the domain testable with plain JUnit — no Spring context needed.
-
-**In-memory repositories for tests** — Acceptance tests use in-memory implementations of outbound ports, so they run fast without a database. Repository tests use `@DataJpaTest` with H2 in PostgreSQL compatibility mode.
-
-**Specs as the source of truth** — Feature specifications in `doc/specs/` define the contract. Acceptance tests verify the contract. Production code implements it. When specs change, tests change first.
-
-## Useful Commands
-
-```bash
-./mvnw test                              # Unit tests only
-./mvnw verify                            # Unit + acceptance tests
-./mvnw -Dtest=DemoApplicationTest test # Single test class
-./mvnw spring-boot:run                   # Run the app (needs PostgreSQL)
-./mvnw clean package                     # Build the JAR
+```powershell
+.\mvnw.cmd test
+.\mvnw.cmd verify
+.\mvnw.cmd '-Dtest=ApplicationTests#contextLoads' test
+.\mvnw.cmd spring-boot:run
+.\mvnw.cmd clean package
 ```
+
+On macOS/Linux, use `./mvnw` instead of `.\mvnw.cmd`. Tests use H2; `verify` also runs acceptance tests ending in `IT`.
 
 ### Running locally with PostgreSQL
 
-`spring-boot:run` needs a PostgreSQL instance. The connection is configured in
-`src/main/resources/application.yaml` and overridable via `DB_URL` / `DB_USERNAME` /
-`DB_PASSWORD`. To start one with Docker:
+`spring-boot:run` needs a PostgreSQL instance. Configure the connection with
+Spring Boot's `SPRING_DATASOURCE_URL`, `SPRING_DATASOURCE_USERNAME`, and
+`SPRING_DATASOURCE_PASSWORD` environment variables. To start PostgreSQL with Docker:
 
 ```bash
 docker run --name demo-app-pg -e POSTGRES_DB=demo_app \
   -e POSTGRES_USER=demo_app -e POSTGRES_PASSWORD=demo_app -p 5432:5432 -d postgres:17
 ```
 
-Tests don't need this — they run against H2 in PostgreSQL compatibility mode.
+## Copilot workflow examples
 
-### With Claude Code
-
-```bash
-claude                                   # Start a Claude Code session
-/discover "As a customer, I want..."     # Run Example Mapping on a user story
-/accept Rule1 @doc/specs/feature.md      # Write an acceptance test for a spec rule
-/tdd ClassName#methodName                # Run one TDD cycle
-/review                                  # Review uncommitted changes
-```
+- **New feature:** “Use the `discover` skill to map this story: As a customer, I want…”
+- **Next spec rule:** “Use the `accept` skill for the next rule in `doc/specs/<feature>.md`.”
+- **One inner TDD cycle:** “Use the `tdd` skill to drive `ClassName#methodName`.”
+- **Review before commit:** “Use the `review` skill on the current feature changes.”
+- **Quality pipeline:** “Use the `quality-check` skill and write the consolidated report.”
+- **Change summary:** “Use the `commit-summary` skill for this branch.”
